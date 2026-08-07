@@ -30,20 +30,26 @@ export interface ParseResult {
 
 export const MAX_INPUT_BYTES = 256_000
 
-/** 校验分隔符：单字符或 "tab"。非法时抛错（csv: 前缀）。 */
+/** 校验分隔符：单 UTF-16 code unit 或 "tab"；拒绝 surrogate pair 与控制字符（除 \t）。 */
 export function normalizeDelimiter(delimiter: unknown): string {
   if (delimiter === undefined || delimiter === null) return ','
   if (typeof delimiter !== 'string') {
     throw new Error('csv: delimiter must be a single character or "tab"')
   }
   if (delimiter === 'tab') return '\t'
-  if ([...delimiter].length !== 1) {
+  // UTF-16 单元数：非 BMP 字符（如 😀）长度为 2，解析器按 code unit 比较无法匹配，
+  // 必须拒绝；同时拒绝换行等控制字符（会改变行解析语义）。
+  if (delimiter.length !== 1) {
     throw new Error('csv: delimiter must be a single character or "tab"')
+  }
+  const code = delimiter.charCodeAt(0)
+  if (code < 0x20 && delimiter !== '\t') {
+    throw new Error('csv: delimiter must be a single character or "tab" (control characters are not allowed)')
   }
   return delimiter
 }
 
-/** 解析 CSV 文本为字符串网格；跳过空行；BOM 剥离；输入字节上限检查。 */
+/** 解析 CSV 文本为字符串网格；跳过空行；BOM 剥离；输入字节上限检查；严格引号校验。 */
 export function parseCsv(text: unknown, options: ParseOptions): ParseResult {
   if (typeof text !== 'string') {
     throw new Error('csv: csv must be a string')
@@ -56,6 +62,7 @@ export function parseCsv(text: unknown, options: ParseOptions): ParseResult {
   let row: string[] = []
   let field = ''
   let inQuotes = false
+  let afterQuote = false // 闭合引号后只允许分隔符/行结束/EOF
   let skippedBlank = 0
   let i = 0
   const len = text.length
@@ -83,9 +90,21 @@ export function parseCsv(text: unknown, options: ParseOptions): ParseResult {
     if (inQuotes) {
       if (ch === '"') {
         if (text[i + 1] === '"') { field += '"'; i++ } // "" 转义
-        else inQuotes = false
+        else { inQuotes = false; afterQuote = true } // 闭合引号
       } else {
         field += ch
+      }
+    } else if (afterQuote) {
+      // RFC 4180：闭合引号后只允许分隔符、行结束或 EOF
+      if (ch === delim) {
+        pushField()
+        afterQuote = false
+      } else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && text[i + 1] === '\n') i++
+        pushRow()
+        afterQuote = false
+      } else {
+        throw new Error(`csv: invalid character "${ch}" after closing quote at position ${i}`)
       }
     } else if (ch === '"' && field === '') {
       inQuotes = true // 仅字段开头是引号时进入引用态
@@ -100,6 +119,9 @@ export function parseCsv(text: unknown, options: ParseOptions): ParseResult {
     }
   }
   // 无结尾换行时收尾（避免吞掉最后一行）
+  if (inQuotes) {
+    throw new Error('csv: unterminated quoted field (missing closing quote)')
+  }
   if (field !== '' || row.length > 0) pushRow()
   return { rows, skippedBlank }
 }

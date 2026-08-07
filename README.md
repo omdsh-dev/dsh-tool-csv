@@ -65,12 +65,17 @@ csv { action: "stats", csv: "name,city\nalice,nyc" }
 |---|---|
 | 引号内逗号/换行/CRLF | 视为字段内容（跨行字段） |
 | `""` 转义 | 解码为单个 `"` |
+| **未闭合引号** | **报错**：`csv: unterminated quoted field`（严格模式，不静默容错） |
+| **闭合引号后非法字符** | **报错**：`csv: invalid character "x" after closing quote`（RFC 4180：闭合后只允许分隔符/换行/EOF） |
 | 首行 BOM | 剥离后再解析 |
 | 空行 | 跳过（stats 报告空行数） |
 | 字段数不一致 | 不报错：缺失补 `null`、多余并入最后一个字段（stats 记录警告） |
 | 重复列名 | 后出现的列覆盖先出现的（stats 记录警告） |
+| **`__proto__`/`constructor`/`prototype` 表头** | null-prototype 对象写入，**无损序列化**（`{"__proto__":"value"}`） |
+| delimiter | 仅单 UTF-16 code unit 或 `"tab"`；拒绝 surrogate pair（如 `😀`）与控制字符（除 `\t`） |
 | 无表头 | `header: false`，行解析为数组，`column` 用 1-based 索引 |
 | 超 256KB 输入 | 直接报错（不截断） |
+| 十万行级输入 | 单遍聚合计算列宽（无 spread），不触发 RangeError |
 
 ## 接入方式
 
@@ -86,8 +91,8 @@ dsh --profile web --dump-config | grep tool-csv
 node <monorepo>/node_modules/vitest/vitest.mjs run tests
 ```
 
-- `parse.spec.ts`：RFC 4180 边界（引号/转义/BOM/CRLF/空行/tab/大小上限）
-- `query.spec.ts`：列名/索引过滤、精确匹配、limit、错误路径、stats 警告、JSON 映射
+- `parse.spec.ts`：RFC 4180 边界（引号/转义/BOM/CRLF/空行/tab/大小上限/严格引号错误/delimiter 校验）
+- `query.spec.ts`：列名/索引过滤、精确匹配、limit、错误路径、stats 警告、JSON 映射、危险表头、12.5 万行压力
 - `register.spec.ts`：注册契约（AUDIT-CROSS-02 风格）
 
 ## 许可

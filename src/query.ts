@@ -39,6 +39,24 @@ export interface Stats {
 
 const DEFAULT_LIMIT = 100
 
+/** 单遍循环求最大列宽（不用 spread——十万行级 grid 会触发 RangeError）。 */
+function gridWidth(grid: string[][]): number {
+  let width = 0
+  for (const row of grid) {
+    if (row.length > width) width = row.length
+  }
+  return width
+}
+
+/** 单遍循环求最小列宽。 */
+function gridMinWidth(grid: string[][]): number {
+  let min = Number.POSITIVE_INFINITY
+  for (const row of grid) {
+    if (row.length < min) min = row.length
+  }
+  return min
+}
+
 /** 规范化 limit：非法值（undefined/null/非有限/负数/0/小数）回退到默认 100。 */
 export function normalizeLimit(limit: unknown): number {
   if (typeof limit !== 'number' || !Number.isFinite(limit) || limit < 1) {
@@ -77,7 +95,7 @@ function resolveColumn(grid: string[][], column: string, header: boolean): numbe
   if (byIndex === null) {
     throw new Error(`csv: header=false requires a 1-based numeric column, got "${column}"`)
   }
-  const width = grid.length > 0 ? Math.max(...grid.map(r => r.length)) : 0
+  const width = gridWidth(grid)
   if (byIndex > width) {
     throw new Error(`csv: column index ${byIndex} out of bounds (${width} columns)`)
   }
@@ -101,7 +119,7 @@ export function queryRows(grid: string[][], options: QueryOptions): QueryResult 
   if (options.header && grid.length > 0) {
     columns.push(...grid[0]!)
   } else {
-    const width = grid.length > 0 ? Math.max(...grid.map(r => r.length)) : 0
+    const width = gridWidth(grid)
     for (let i = 1; i <= width; i++) columns.push(String(i))
   }
   const rows = options.header && grid.length > 0 ? [grid[0]!, ...matched] : matched
@@ -114,7 +132,7 @@ export function statsGrid(grid: string[][], header: boolean, emptyRows: number):
   if (grid.length === 0) {
     return { rows: 0, columns: 0, columnNames: header ? [] : null, emptyRows, warnings }
   }
-  const width = Math.max(...grid.map(r => r.length))
+  const width = gridWidth(grid)
 
   if (header) {
     const headerRow = grid[0]!
@@ -156,7 +174,7 @@ export function statsGrid(grid: string[][], header: boolean, emptyRows: number):
     if (row.length !== first) inconsistent++
   }
   if (inconsistent > 0) {
-    warnings.push(`${inconsistent} row(s) have inconsistent field counts (min ${Math.min(...grid.map(r => r.length))}, max ${width})`)
+    warnings.push(`${inconsistent} row(s) have inconsistent field counts (min ${gridMinWidth(grid)}, max ${width})`)
   }
   return { rows: grid.length, columns: width, columnNames: null, emptyRows, warnings }
 }
@@ -180,7 +198,9 @@ export function toJsonRows(
     const effective = row.length > headerRow.length
       ? [...row.slice(0, headerRow.length - 1), row.slice(headerRow.length - 1).join(delimiter)]
       : row
-    const obj: Record<string, string | null> = {}
+    // null-prototype 对象：__proto__/constructor/prototype 等表头作为普通字段写入，
+    // 不会被原型 setter 吞掉（JSON.stringify 对 null-prototype 对象输出不变）
+    const obj: Record<string, string | null> = Object.create(null)
     for (let i = 0; i < headerRow.length; i++) {
       obj[headerRow[i]!] = i < effective.length ? effective[i]! : null
     }

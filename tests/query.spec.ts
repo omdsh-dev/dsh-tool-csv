@@ -140,4 +140,37 @@ describe('toJsonRows', () => {
   it('returns [] for an empty grid', () => {
     expect(toJsonRows([], true, ',', 100)).toEqual([])
   })
+
+  // ── C-02：危险表头安全写入 ──
+
+  it('serializes __proto__ headers without data loss (C-02)', () => {
+    const r = parseCsv('__proto__\nvalue', { delimiter: ',', header: true })
+    const rows = toJsonRows(r.rows, true, ',', 100) as Array<Record<string, string | null>>
+    expect(Object.prototype.hasOwnProperty.call(rows[0], '__proto__')).toBe(true)
+    expect(rows[0]!['__proto__']).toBe('value')
+    expect(JSON.stringify(rows)).toBe('[{"__proto__":"value"}]')
+  })
+
+  it('handles constructor / prototype headers safely (C-02)', () => {
+    const r = parseCsv('constructor,prototype\n1,2', { delimiter: ',', header: true })
+    const rows = toJsonRows(r.rows, true, ',', 100) as Array<Record<string, string | null>>
+    expect(JSON.stringify(rows)).toBe('[{"constructor":"1","prototype":"2"}]')
+  })
+
+  // ── C-03：十万行级压力（无 spread）──
+
+  it('stats/query on 125k+ rows do not throw RangeError (C-03)', () => {
+    const grid = Array.from({ length: 125_001 }, () => ['a'])
+    expect(() => statsGrid(grid, false, 0)).not.toThrow()
+    const s = statsGrid(grid, false, 0)
+    expect(s.rows).toBe(125_001)
+    expect(s.columns).toBe(1)
+    // query 路径（header=false，列宽计算）同样无 spread
+    const q = queryRows(grid, { column: '1', value: 'a', header: false, limit: 100 })
+    expect(q.rows).toHaveLength(100)
+    // header=true 路径
+    const g2 = [['h'], ...grid]
+    expect(() => statsGrid(g2, true, 0)).not.toThrow()
+    expect(statsGrid(g2, true, 0).rows).toBe(125_001)
+  })
 })

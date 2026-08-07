@@ -77,6 +77,27 @@ describe('parseCsv: RFC 4180 边界', () => {
     const big = 'x'.repeat(MAX_INPUT_BYTES + 1)
     expect(() => parseCsv(big, { ...base, delimiter: ',' })).toThrow(`csv: input exceeds ${MAX_INPUT_BYTES} bytes`)
   })
+
+  // ── C-01：严格引号策略 ──
+
+  it('rejects unterminated quoted fields (C-01)', () => {
+    expect(() => parseCsv('"a,b', { ...base, delimiter: ',' }))
+      .toThrow('csv: unterminated quoted field')
+  })
+
+  it('rejects invalid characters after a closing quote (C-01)', () => {
+    expect(() => parseCsv('"a"x,b', { ...base, delimiter: ',' }))
+      .toThrow('csv: invalid character "x" after closing quote')
+    expect(() => parseCsv('"a" ,b', { ...base, delimiter: ',' }))
+      .toThrow('csv: invalid character " " after closing quote')
+  })
+
+  it('accepts a quoted field followed by delimiter / newline / EOF (C-01)', () => {
+    expect(parseCsv('"a",b', { ...base, delimiter: ',' }).rows).toEqual([['a', 'b']])
+    expect(parseCsv('"a"\n', { ...base, delimiter: ',' }).rows).toEqual([['a']])
+    expect(parseCsv('"a"', { ...base, delimiter: ',' }).rows).toEqual([['a']])
+    expect(parseCsv('"a"\r\n"b"', { ...base, delimiter: ',' }).rows).toEqual([['a'], ['b']])
+  })
 })
 
 describe('normalizeDelimiter', () => {
@@ -95,5 +116,18 @@ describe('normalizeDelimiter', () => {
   it('rejects multi-character delimiters', () => {
     expect(() => normalizeDelimiter('||')).toThrow('csv: delimiter must be a single character or "tab"')
     expect(() => normalizeDelimiter(5)).toThrow('csv: delimiter must be a single character or "tab"')
+  })
+
+  it('rejects surrogate-pair (non-BMP) delimiters (C-04)', () => {
+    // 😀 占 2 个 UTF-16 code unit；解析器按 code unit 比较，接受它会永远匹配不上
+    expect(() => normalizeDelimiter('😀')).toThrow('csv: delimiter must be a single character or "tab"')
+  })
+
+  it('rejects control-character delimiters except tab (C-04)', () => {
+    expect(() => normalizeDelimiter('\n')).toThrow(/control characters are not allowed/)
+    expect(() => normalizeDelimiter('\r')).toThrow(/control characters are not allowed/)
+    expect(() => normalizeDelimiter('\0')).toThrow(/control characters are not allowed/)
+    expect(normalizeDelimiter('\t')).toBe('\t')
+    expect(normalizeDelimiter(' ')).toBe(' ')
   })
 })
