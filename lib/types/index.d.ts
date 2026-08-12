@@ -9,7 +9,7 @@
  * 安全边界：零依赖、纯函数（不读文件/不联网/不 eval）；输入 256KB 上限；
  * 查询只做字面精确匹配，无表达式求值面；timeoutMs 2000 兜底。
  */
-import type { Context } from 'cordis';
+import type { Context } from '@deepseek-ai/cordis';
 export declare const name = "@deepseek-ai/dsh-tool-csv";
 export declare const inject: string[];
 export declare function apply(ctx: Context): void;
