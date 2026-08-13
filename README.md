@@ -1,5 +1,7 @@
 # dsh-tool-csv
 
+[English](README.en.md)
+
 DSH CSV 数据工具插件 —— 解析、查询、过滤、统计和转换 CSV 文本。零依赖、纯函数、RFC 4180 状态机解析器。
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
